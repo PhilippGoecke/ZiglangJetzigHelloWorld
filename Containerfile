@@ -56,6 +56,8 @@ RUN jetzig version \
   && jetzig init . \
   && ls -lisah
 
+RUN zig build -Doptimize=ReleaseFast
+
 EXPOSE 8080
 
-CMD ["jetzig" , "server"]
+#CMD ["jetzig" , "server"]
