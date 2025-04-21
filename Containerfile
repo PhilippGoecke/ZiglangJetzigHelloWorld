@@ -22,7 +22,7 @@ FROM debian:bookworm-slim as jetzig
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt update && apt upgrade -y \
-  && apt install -y --no-install-recommends --no-install-suggests git ca-certificates \
+  && apt install -y --no-install-recommends --no-install-suggests git ca-certificates curl \
   && rm -rf "/var/lib/apt/lists/*" \
   && rm -rf /var/cache/apt/archives
 
@@ -52,8 +52,8 @@ COPY --from=jetzig /usr/bin/jetzig /usr/bin/jetzig
 
 WORKDIR /jetzig-app
 
-RUN jetzig version \
-  && jetzig init . \
+RUN jetzig init . \
+  && jetzig update \
   && ls -lisah
 
 RUN zig build -Doptimize=ReleaseFast
