@@ -9,12 +9,12 @@ RUN apt update && apt upgrade -y \
 
 WORKDIR /ziglang
 
-RUN curl -fsSL https://ziglang.org/builds/zig-linux-x86_64-0.15.0-dev.532+a3693aae3.tar.xz --output zig-linux-x86_64-0.15.0-dev.532+a3693aae3.tar.xz \
-  && curl https://ziglang.org/builds/zig-linux-x86_64-0.15.0-dev.532+a3693aae3.tar.xz.minisig --output zig.tar.xz.minisig \
-  && minisign -V -x zig.tar.xz.minisig -m zig-linux-x86_64-0.15.0-dev.532+a3693aae3.tar.xz -P 'RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U' \
-  && tar xf zig-linux-x86_64-0.15.0-dev.532+a3693aae3.tar.xz \
-  && mv zig-linux-x86_64-0.15.0-dev.532+a3693aae3/zig /usr/bin/ \
-  && mv zig-linux-x86_64-0.15.0-dev.532+a3693aae3/lib/ /usr/lib/zig/ \
+RUN curl -fsSL https://ziglang.org/builds/zig-x86_64-linux-0.15.0-dev.847+850655f06.tar.xz --output zig-x86_64-linux-0.15.0-dev.847+850655f06.tar.xz \
+  && curl https://ziglang.org/builds/zig-x86_64-linux-0.15.0-dev.847+850655f06.tar.xz.minisig --output zig.tar.xz.minisig \
+  && minisign -V -x zig.tar.xz.minisig -m zig-x86_64-linux-0.15.0-dev.847+850655f06.tar.xz -P 'RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U' \
+  && tar xf zig-x86_64-linux-0.15.0-dev.847+850655f06.tar.xz \
+  && mv zig-x86_64-linux-0.15.0-dev.847+850655f06/zig /usr/bin/ \
+  && mv zig-x86_64-linux-0.15.0-dev.847+850655f06/lib/ /usr/lib/zig/ \
   && zig version
 
 FROM debian:bookworm-slim as jetzig
