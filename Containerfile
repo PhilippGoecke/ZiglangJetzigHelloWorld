@@ -9,12 +9,14 @@ RUN apt update && apt upgrade -y \
 
 WORKDIR /ziglang
 
-RUN curl -fsSL https://ziglang.org/builds/zig-x86_64-linux-0.15.0-dev.847+850655f06.tar.xz --output zig-x86_64-linux-0.15.0-dev.847+850655f06.tar.xz \
-  && curl https://ziglang.org/builds/zig-x86_64-linux-0.15.0-dev.847+850655f06.tar.xz.minisig --output zig.tar.xz.minisig \
-  && minisign -V -x zig.tar.xz.minisig -m zig-x86_64-linux-0.15.0-dev.847+850655f06.tar.xz -P 'RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U' \
-  && tar xf zig-x86_64-linux-0.15.0-dev.847+850655f06.tar.xz \
-  && mv zig-x86_64-linux-0.15.0-dev.847+850655f06/zig /usr/bin/ \
-  && mv zig-x86_64-linux-0.15.0-dev.847+850655f06/lib/ /usr/lib/zig/ \
+# https://ziglang.org/download/
+RUN curl -fsSL https://ziglang.org/download/0.15.1/zig-x86_64-linux-0.15.1.tar.xz --output zig-x86_64-linux-0.15.1.tar.xz \
+  && curl https://ziglang.org/download/0.15.1/zig-x86_64-linux-0.15.1.tar.xz.minisig --output zig.tar.xz.minisig \
+  && ls -lisah \
+  && minisign -V -x zig.tar.xz.minisig -m zig-x86_64-linux-0.15.1.tar.xz -P 'RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U' \
+  && tar xf zig-x86_64-linux-0.15.1.tar.xz \
+  && mv zig-x86_64-linux-0.15.1/zig /usr/bin/ \
+  && mv zig-x86_64-linux-0.15.1/lib/ /usr/lib/zig/ \
   && zig version
 
 FROM debian:bookworm-slim as jetzig
@@ -31,7 +33,7 @@ COPY --from=install /usr/lib/zig /usr/lib/zig
 
 WORKDIR /jetzig
 
-RUN git clone https://github.com/jetzig-framework/jetzig --depth 1 \
+RUN git clone --depth 1 https://github.com/jetzig-framework/jetzig \
   && cd jetzig/cli \
   && zig build install \
   && mv zig-out/bin/jetzig /usr/bin/ \
