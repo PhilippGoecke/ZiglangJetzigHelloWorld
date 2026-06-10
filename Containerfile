@@ -1,65 +1,120 @@
-FROM debian:trixie-slim as install
+# syntax=docker/dockerfile:1.6
 
-ARG DEBIAN_FRONTEND=noninteractive
+# ---- Build stage ----
+FROM debian:trixie-slim AS build
 
-RUN apt update && apt upgrade -y \
-  && apt install -y --no-install-recommends --no-install-suggests ca-certificates curl xz-utils minisign \
-  && rm -rf "/var/lib/apt/lists/*" \
-  && rm -rf /var/cache/apt/archives
+# Install Zig
+ARG ZIG_VERSION=0.16.0
+ARG ZIG_SHA256=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl tar xz-utils ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" \
+    && echo "${ZIG_SHA256}  /tmp/zig.tar.xz" | sha256sum -c - \
+    && tar -xJ -C /opt -f /tmp/zig.tar.xz \
+    && rm /tmp/zig.tar.xz \
+    && ln -s "/opt/zig-linux-x86_64-${ZIG_VERSION}/zig" /usr/local/bin/zig
 
-WORKDIR /ziglang
+WORKDIR /app
 
-# https://ziglang.org/download/
-RUN curl -fsSL https://ziglang.org/download/0.15.1/zig-x86_64-linux-0.15.1.tar.xz --output zig-x86_64-linux-0.15.1.tar.xz \
-  && curl https://ziglang.org/download/0.15.1/zig-x86_64-linux-0.15.1.tar.xz.minisig --output zig.tar.xz.minisig \
-  && ls -lisah \
-  && minisign -V -x zig.tar.xz.minisig -m zig-x86_64-linux-0.15.1.tar.xz -P 'RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U' \
-  && tar xf zig-x86_64-linux-0.15.1.tar.xz \
-  && mv zig-x86_64-linux-0.15.1/zig /usr/bin/ \
-  && mv zig-x86_64-linux-0.15.1/lib/ /usr/lib/zig/ \
-  && zig version
+# build.zig.zon: fetch Horizon web framework
+RUN cat > build.zig.zon <<'EOF'
+.{
+    .name = "hello_horizon",
+    .version = "0.1.0",
+    .paths = .{""},
+    .dependencies = .{
+        .horizon = .{
+            .url = "https://github.com/HARMONICOM/horizon/archive/refs/tags/v0.1.7.tar.gz",
+            .hash = "a830e571b9b3c84d379bb9e6c51a6923175d323aeb4e2038cd7a023952ab3499",
+        },
+    },
+}
+EOF
 
-FROM debian:trixie-slim as jetzig
+# build.zig
+RUN cat > build.zig <<'EOF'
+const std = @import("std");
 
-ARG DEBIAN_FRONTEND=noninteractive
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-RUN apt update && apt upgrade -y \
-  && apt install -y --no-install-recommends --no-install-suggests git ca-certificates curl \
-  && rm -rf "/var/lib/apt/lists/*" \
-  && rm -rf /var/cache/apt/archives
+    const exe = b.addExecutable(.{
+        .name = "hello_horizon",
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
-COPY --from=install /usr/bin/zig /usr/bin/zig
-COPY --from=install /usr/lib/zig /usr/lib/zig
+    const horizon = b.dependency("horizon", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("horizon", horizon.module("horizon"));
 
-WORKDIR /jetzig
+    b.installArtifact(exe);
+}
+EOF
 
-RUN git clone --depth 1 https://github.com/jetzig-framework/jetzig \
-  && cd jetzig/cli \
-  && zig build install \
-  && mv zig-out/bin/jetzig /usr/bin/ \
-  && jetzig --help
+# src/main.zig: Hello world with optional "name" query parameter
+RUN mkdir -p src && cat > src/main.zig <<'EOF'
+const std = @import("std");
+const horizon = @import("horizon");
 
+fn extractNameParam(target: []const u8) ?[]const u8 {
+    const q = std.mem.indexOfScalar(u8, target, '?') orelse return null;
+    var it = std.mem.splitScalar(u8, target[q + 1 ..], '&');
+    while (it.next()) |pair| {
+        if (std.mem.startsWith(u8, pair, "name=")) {
+            return pair[5..];
+        }
+    }
+    return null;
+}
+
+fn handler(
+    ctx: *horizon.Context,
+    req: horizon.Request,
+    res: *horizon.ResponseWriter,
+) anyerror!void {
+    _ = ctx;
+    const name = extractNameParam(req.target) orelse "World";
+    var buf: [256]u8 = undefined;
+    const msg = try std.fmt.bufPrint(&buf, "Hello, {s}!\n", .{name});
+    try res.any().writeAll(msg);
+}
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const addr = try std.net.Address.parseIp4("0.0.0.0", 8000);
+
+    var server = try horizon.Server.init(allocator, .{
+        .address = addr,
+        .handler = horizon.Handler.init(handler),
+    });
+    defer server.deinit();
+
+    std.log.info("Listening on http://0.0.0.0:8000 (use ?name=YourName)", .{});
+    try server.serve();
+}
+EOF
+
+RUN zig build -Doptimize=ReleaseSafe
+
+# ---- Runtime stage ----
 FROM debian:trixie-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libgcc-s1 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /app/zig-out/bin/hello_horizon /usr/local/bin/hello_horizon
 
-ARG DEBIAN_FRONTEND=noninteractive
+# Greeting name is provided per-request via the "name" query parameter, e.g.:
+#   curl "http://localhost:8000/?name=Alice"
 
-RUN apt update && apt upgrade -y \
-  && apt install -y --no-install-recommends --no-install-suggests git ca-certificates curl \
-  && rm -rf "/var/lib/apt/lists/*" \
-  && rm -rf /var/cache/apt/archives
-
-COPY --from=install /usr/bin/zig /usr/bin/zig
-COPY --from=install /usr/lib/zig /usr/lib/zig
-COPY --from=jetzig /usr/bin/jetzig /usr/bin/jetzig
-
-WORKDIR /jetzig-app
-
-RUN jetzig init . \
-  && jetzig update \
-  && ls -lisah
-
-RUN zig build -Doptimize=ReleaseFast
-
-EXPOSE 8080
-
-#CMD ["jetzig" , "server"]
+EXPOSE 8000
+ENTRYPOINT ["/usr/local/bin/hello_horizon"]
